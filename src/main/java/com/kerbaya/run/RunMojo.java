@@ -237,7 +237,7 @@ public class RunMojo implements org.apache.maven.plugin.Mojo
 					.resolve("java")
 					.toAbsolutePath()
 					.toString());
-			command.add("--class-path");
+			command.add("-cp");
 			command.add(tmpJar.toAbsolutePath().toString());
 			command.add(className);
 			command.addAll(calcArguments());
