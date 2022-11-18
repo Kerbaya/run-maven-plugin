@@ -2,7 +2,7 @@
 Used to runs method from arbitrary classes in Maven artifacts
 
 ## Goals Overview
-* [run:run](./run-mojo.html) Run a Maven artifact class
+* [run:run](https://www.kerbaya.com/run-maven-plugin/run-mojo.html) Run a Maven artifact class
 
 ## Usage
 
