@@ -197,7 +197,7 @@ public class RunMojo implements org.apache.maven.plugin.Mojo
 		Exception ex = dr.getCollectExceptions().stream().findAny().orElse(null);
 		if (ex != null)
 		{
-			throw new MojoExecutionException(ex);
+			throw new MojoExecutionException(ex.getMessage(), ex);
 		}
 		
 		List<File> classPathArtifacts = new ArrayList<>();
@@ -269,7 +269,7 @@ public class RunMojo implements org.apache.maven.plugin.Mojo
 		}
 		catch (DependencyResolutionException | IOException | InterruptedException e)
 		{
-			throw new MojoExecutionException(e);
+			throw new MojoExecutionException(e.getMessage(), e);
 		}
 	}
 }
