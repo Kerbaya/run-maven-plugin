@@ -1,0 +1,6 @@
+# ignoring all Eclipse files
+bin
+target
+.project
+.settings
+.classpath
