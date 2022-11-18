@@ -1,4 +1,4 @@
-# Stamp Maven Plugin
+# Run Maven Plugin
 Used to runs method from arbitrary classes in Maven artifacts
 
 ## Goals Overview
