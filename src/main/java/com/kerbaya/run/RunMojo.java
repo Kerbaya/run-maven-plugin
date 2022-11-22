@@ -29,7 +29,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.jar.Attributes;
 import java.util.jar.JarFile;
@@ -50,6 +52,7 @@ import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.collection.CollectRequest;
 import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
+import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.DependencyRequest;
 import org.eclipse.aether.resolution.DependencyResolutionException;
 import org.eclipse.aether.resolution.DependencyResult;
@@ -60,36 +63,75 @@ import lombok.Setter;
 @org.apache.maven.plugins.annotations.Mojo(
 		name="run",
 		requiresProject=false,
-		requiresDirectInvocation=true,
 		threadSafe=true,
 		aggregator=false,
 		requiresOnline=true)
 public class RunMojo implements org.apache.maven.plugin.Mojo
 {
+	public static final String ARGUMENT_PREFIX = "arg.";
+	public static final String OPTION_PREFIX = "opt.";
+	
 	@Getter
 	@Setter
 	private Log log;
 	
 	/**
-	 * The artifact coordinates in the format {@code <groupId>:<artifactId>[:<extension>[:<classifier>]]:<version>} 
+	 * <p>The artifact coordinates in the format 
+	 * {@code <groupId>:<artifactId>[:<extension>[:<classifier>]]:<version>}</p>
+	 * <p>Example: {@code org.myorg:myapp:1.0.0}</p> 
 	 */
 	@Parameter(property="artifact", required=true)
 	private String artifact;
 	
+	/**
+	 * <p>The full class name of the main class.  If omitted, {@code artifact} will be executed as a runnable JAR.</p>
+	 * Example: {@code org.myorg.myapp.Main}
+	 */
 	@Parameter(property="className")
 	private String className;
 	
-	@Parameter(property="method")
-	private String method;
-	
-	@Parameter(property="arguments")
+	/**
+	 * <p>String arguments to pass to the method.  May also be specified using {@code arg.#} parameters</p>
+	 * <p>Model example:</p>
+	 * <code><pre>
+	 * &lt;arguments&gt;
+	 * 	&lt;argument&gt;arg0_value&lt;/argument&gt;
+	 * 	&lt;argument&gt;arg1_value&lt;/argument&gt;
+	 * &lt;/arguments&gt;
+	 * </pre></code>
+	 * <p>Command-line example:</p>
+	 * <code><pre>-Darg.0=arg0_value -Darg.1=arg1_value</pre></code>
+	 */
+	@Parameter
 	private List<String> arguments;
+	
+	/**
+	 * <p>String options to pass to the forked Java runtime environment.  May also be specified using {@code opt.#} 
+	 * parameters</p>
+	 * <p>Model example:</p>
+	 * <code><pre>
+	 * &lt;options&gt;
+	 * 	&lt;option&gt;-Xms1g&lt;/option&gt;
+	 * 	&lt;option&gt;-DpropName=propValue&lt;/option&gt;
+	 * &lt;/options&gt;
+	 * </pre></code>
+	 * <p>Command-line example:</p>
+	 * <code><pre>-Dopt.0=-Xms1g -Dopt.1=-DpropName=propValue</pre></code>
+	 */
+	@Parameter
+	private List<String> options;
 	
 	@Inject
 	private RepositorySystem rs;
 
 	@Parameter(defaultValue="${repositorySystemSession}", required=true, readonly=true)
 	private RepositorySystemSession rss;
+	
+	@Parameter(defaultValue="${project.remoteProjectRepositories}", readonly=true)
+	private List<RemoteRepository> remoteProjectRepositories;
+	
+	@Parameter(defaultValue="${session.userProperties}", readonly=true)
+	private Properties properties;
 	
 	private void debug(String pattern, Object... args)
 	{
@@ -111,22 +153,38 @@ public class RunMojo implements org.apache.maven.plugin.Mojo
 		}
 	}
 	
-	private List<String> calcArguments()
+	private List<String> calcProperties(List<String> model, String prefix)
 	{
-		if (arguments != null && !arguments.isEmpty())
+		if (model != null && !model.isEmpty())
 		{
-			return arguments;
+			return model;
 		}
 		
-		List<String> arguments = new ArrayList<>();
-		int i = 0;
-		String arg;
-		while ((arg = System.getProperty("arg." + i)) != null)
+		if (properties == null)
 		{
-			arguments.add(arg);
+			return Collections.emptyList();
+		}
+		
+		List<String> result = new ArrayList<>();
+		int i = 0;
+		String value;
+		while((value = properties.getProperty(prefix + i)) != null)
+		{
+			result.add(value);
 			i++;
 		}
-		return arguments;
+		
+		return result;
+	}
+	
+	private List<String> calcArguments()
+	{
+		return calcProperties(arguments, ARGUMENT_PREFIX);
+	}
+	
+	private List<String> calcOptions()
+	{
+		return calcProperties(options, OPTION_PREFIX);
 	}
 	
 	private String calcMainClassName(List<File> classPathArtifacts) throws IOException
@@ -192,13 +250,10 @@ public class RunMojo implements org.apache.maven.plugin.Mojo
 		
 		debug("resolving: %s", artifact);
 		DependencyResult dr = rs.resolveDependencies(
-				rss, new DependencyRequest(new CollectRequest(new Dependency(artifact, "compile"), null), null));
-		
-		Exception ex = dr.getCollectExceptions().stream().findAny().orElse(null);
-		if (ex != null)
-		{
-			throw new MojoExecutionException(ex.getMessage(), ex);
-		}
+				rss, 
+				new DependencyRequest(
+						new CollectRequest(new Dependency(artifact, "compile"), remoteProjectRepositories), 
+						null));
 		
 		List<File> classPathArtifacts = new ArrayList<>();
 		
@@ -239,6 +294,7 @@ public class RunMojo implements org.apache.maven.plugin.Mojo
 					.toString());
 			command.add("-cp");
 			command.add(tmpJar.toAbsolutePath().toString());
+			command.addAll(calcOptions());
 			command.add(className);
 			command.addAll(calcArguments());
 			
